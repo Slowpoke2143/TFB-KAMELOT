@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import logging
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
@@ -150,6 +149,11 @@ async def inline_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # data == "checkout" сюда НЕ попадёт — ConversationHandler перехватит
 
+# -------------------- ERROR HANDLER --------------------
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    logging.exception("Unhandled exception while processing update: %s", update, exc_info=context.error)
+
 # -------------------- main --------------------
 
 def main():
@@ -171,16 +175,18 @@ def main():
             ASK_PAYMENT:[CallbackQueryHandler(order_h.ask_payment, pattern="^pay:(cash|qr|online)$")],
         },
         fallbacks=[MessageHandler(filters.Regex("^❌ Отмена$"), order_h.cancel_checkout_msg)],
-        per_message=False,
+        per_message=False,  # предупреждение от PTB — можно игнорировать
     )
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(conv)
     app.add_handler(CallbackQueryHandler(inline_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+    app.add_error_handler(error_handler)
 
     print("Бот запущен...")
-    app.run_polling()
+    # сбрасываем накопившиеся апдейты, чтобы начать «с чистого листа»
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
