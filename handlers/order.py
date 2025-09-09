@@ -165,7 +165,7 @@ async def ask_phone(update, context):
         return ASK_PHONE
     context.user_data["phone"] = text
     sent = await update.message.reply_text(
-        "📍 Введите адрес доставки:", reply_markup=_cancel_only_kb()
+        "📍 Введите адрес доставки (доставка осуществляется только в пределах г.Керчь):", reply_markup=_cancel_only_kb()
     )
     context.user_data.setdefault("message_ids", []).append(sent.message_id)
     return ASK_ADDRESS
@@ -206,7 +206,7 @@ async def ask_comment(update, context):
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("💵 Наличные", callback_data="pay:cash")],
             [InlineKeyboardButton("📷 Оплата по QR", callback_data="pay:qr")],
-            [InlineKeyboardButton("🌐 Онлайн", callback_data="pay:online")],
+            [InlineKeyboardButton("🌐 Онлайн (В РАЗРАБОТКЕ ^_^)", callback_data="pay:online")],
         ])
         text_msg = f"💳 Выберите способ оплаты:\n{note}"
 
@@ -427,3 +427,4 @@ async def cancel_checkout_msg(update, context):
     )
     context.user_data.setdefault("message_ids", []).append(sent.message_id)
     return ConversationHandler.END
+
