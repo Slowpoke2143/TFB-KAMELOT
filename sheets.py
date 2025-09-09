@@ -1,26 +1,50 @@
 import os
 import json
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from typing import List, Dict
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
 from config import SPREADSHEET_ID
 
-# Получаем строку из переменной окружения или путь к файлу
-if os.getenv("GOOGLE_CREDENTIALS_JSON"):
-    # ✅ Читаем из переменной окружения
-    json_keyfile_dict = json.loads(os.getenv("GOOGLE_CREDENTIALS_JSON"))
-else:
-    # ✅ Fallback: читаем из локального файла
-    with open("data/credentials.json", "r", encoding="utf-8") as f:
-        json_keyfile_dict = json.load(f)
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_dict(json_keyfile_dict, scope)
-client = gspread.authorize(creds)
+def _load_credentials() -> Credentials:
 
-def get_sheet_names():
-    spreadsheet = client.open_by_key(SPREADSHEET_ID)
-    return [sheet.title for sheet in spreadsheet.worksheets()]
+    json_str = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    if json_str:
+        try:
+            data = json.loads(json_str)
+            return Credentials.from_service_account_info(data, scopes=SCOPES)
+        except Exception:
+            pass  # попробуем другие варианты
 
-def get_dishes_by_sheet(sheet_name):
-    sheet = client.open_by_key(SPREADSHEET_ID).worksheet(sheet_name)
-    return sheet.get_all_records()
+def _service():
+    creds = _load_credentials()
+    # cache_discovery=False — чтобы клиент не пытался писать в файловую систему контейнера
+    return build("sheets", "v4", credentials=creds, cache_discovery=False)
+
+def get_sheet_names() -> List[str]:
+    """Возвращает список названий листов таблицы."""
+    svc = _service()
+    meta = svc.spreadsheets().get(spreadsheetId=SPREADSHEET_ID).execute()
+    return [s["properties"]["title"] for s in meta.get("sheets", [])]
+
+def get_dishes_by_sheet(sheet_name: str) -> List[Dict[str, str]]:
+    """
+    Возвращает строки листа как список словарей.
+    Первая строка — заголовки. Если колонки 'ID' нет — генерируем её как номер строки.
+    """
+    svc = _service()
+    rng = f"{sheet_name}!A1:Z1000"
+    res = svc.spreadsheets().values().get(spreadsheetId=SPREADSHEET_ID, range=rng).execute()
+    values = res.get("values", [])
+    if not values:
+        return []
+
+    headers = [h.strip() for h in values[0]]
+    data: List[Dict[str, str]] = []
+    for idx, row in enumerate(values[1:], start=1):
+        item = {headers[i]: (row[i] if i < len(row) else "") for i in range(len(headers))}
+        if not item.get("ID"):
+            item["ID"] = str(idx)
+        data.append(item)
+    return data
