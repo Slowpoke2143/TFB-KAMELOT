@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
 import re
+import logging
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from telegram import (
@@ -31,7 +31,7 @@ def _msk_now() -> datetime:
     try:
         return datetime.now(ZoneInfo(MSK_TZ))
     except Exception:
-        # В Москве нет сезонных переводов (UTC+3 круглый год) — фолбэк безопасен
+        # В Москве нет сезонных переводов (UTC+3 круглый год)
         return datetime.now(timezone.utc) + timedelta(hours=3)
 
 def _is_qr_only_now() -> bool:
@@ -98,10 +98,19 @@ async def _qr_timeout_job(context):
     ud.setdefault("message_ids", []).append(sent.message_id)
 
 def _schedule_qr_jobs(context, chat_id: int, user_id: int):
-    reminder = context.job_queue.run_once(_qr_reminder_job, when=QR_REMINDER_MINUTES * 60,
-                                          data={"chat_id": chat_id, "user_id": user_id})
-    cancel = context.job_queue.run_once(_qr_timeout_job, when=QR_CANCEL_MINUTES * 60,
-                                        data={"chat_id": chat_id, "user_id": user_id})
+    """
+    Ставит напоминание и авто-отмену через JobQueue.
+    Если JobQueue недоступен (например, PTB без extras) — тихо пропускаем (без падения).
+    """
+    q = getattr(context, "job_queue", None)
+    if not q:
+        logging.warning("JobQueue is not available; QR reminder/timeout will not be scheduled.")
+        context.user_data["qr_jobs"] = []
+        return
+    reminder = q.run_once(_qr_reminder_job, when=QR_REMINDER_MINUTES * 60,
+                          data={"chat_id": chat_id, "user_id": user_id})
+    cancel = q.run_once(_qr_timeout_job, when=QR_CANCEL_MINUTES * 60,
+                        data={"chat_id": chat_id, "user_id": user_id})
     ud = context.user_data
     ud["qr_jobs"] = [reminder, cancel]
 
@@ -156,7 +165,7 @@ async def ask_phone(update, context):
         return ASK_PHONE
     context.user_data["phone"] = text
     sent = await update.message.reply_text(
-        "📍 Введите адрес доставки (доставка осуществляется только в пределах г.Керчь):", reply_markup=_cancel_only_kb()
+        "📍 Введите адрес доставки:", reply_markup=_cancel_only_kb()
     )
     context.user_data.setdefault("message_ids", []).append(sent.message_id)
     return ASK_ADDRESS
@@ -197,7 +206,7 @@ async def ask_comment(update, context):
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("💵 Наличные", callback_data="pay:cash")],
             [InlineKeyboardButton("📷 Оплата по QR", callback_data="pay:qr")],
-            [InlineKeyboardButton("🌐 Онлайн (В РАЗРАБОТКЕ! ^_^)", callback_data="pay:online")],
+            [InlineKeyboardButton("🌐 Онлайн", callback_data="pay:online")],
         ])
         text_msg = f"💳 Выберите способ оплаты:\n{note}"
 
@@ -326,7 +335,6 @@ async def qr_inline_callbacks(update, context):
             return
 
         username = ("@" + query.from_user.username) if query.from_user.username else "—"
-        # ИСПРАВЛЕНО: латинская 'm' в формате даты
         now_str = _msk_now().strftime("%d.%m %H:%M МСК")
         operator_text = (
             "📦 Новый заказ (QR-код)\n"
