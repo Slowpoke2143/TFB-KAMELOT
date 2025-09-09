@@ -285,7 +285,7 @@ async def ask_payment(update, context):
 
         caption = (
             f"Отсканируйте QR-код для оплаты на сумму {total}₽.\n"
-            f"Сделайте скриншот или фото с оплатой и отправьте его оператору @ВАШ ОПЕРАТОР"
+            f"Сделайте скриншот или фото с оплатой и отправьте его оператору @ВАШ ОПЕРАТОР.\n"
             f"После отправки скриншота нажмите кнопку ниже, чтобы отправить заказ оператору."
         )
         confirm_kb = InlineKeyboardMarkup([
@@ -428,5 +428,6 @@ async def cancel_checkout_msg(update, context):
     )
     context.user_data.setdefault("message_ids", []).append(sent.message_id)
     return ConversationHandler.END
+
 
 
